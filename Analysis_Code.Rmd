@@ -1,0 +1,175 @@
+---
+title: "HW1"
+output: html_document
+date: "2024-01-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Homework 1
+
+### Binary Sort for Preference Ranking
+
+```{r}
+set.seed(10)
+
+# function to split dataframe in half
+split <- function(df){
+  df1 <- df[sample(nrow(df), size=nrow(df)/2, replace=FALSE), ]
+  df2 <- subset(df, !(`Profile Nos`%in%df1$`Profile Nos`))
+  return(list('df1'=df1, 'df2'=df2))
+}
+
+# create 4 categories using binary split
+result <- split(profiles)
+good <- result$df1
+not.so.good <- result$df2
+result2 <- split(good)
+very.good <- result2$df1
+good <- result2$df2
+result3 <- split(not.so.good)
+average <- result3$df1
+below.average <- result3$df2
+
+# function to randomly rank rows in a dataframe
+rank <- function(df, min, max){
+  df$Points <- sample(min:max, nrow(df), replace=FALSE)
+  return(df)
+}
+
+# rank each profile
+below.average <- rank(below.average, 60, 70)
+average <- rank(average, 71, 80)
+good <- rank(good, 81, 90)
+very.good <- rank(very.good, 91, 100)
+
+# join all the dataframes into one
+ranked <- rbind(below.average, average)
+ranked <- rbind(ranked, good)
+ranked <- rbind(ranked, very.good)
+
+# order by points, lowest to highest
+ranked <- ranked[order(ranked$Points),]
+
+# add a column for ranking
+ranked$Preference <- seq.int(nrow(ranked))
+
+ranked <- ranked[order(ranked$`Profile Nos`),]
+
+### uncomment this line if you have difference preferences
+# ranked$Preference <- c(14,22,15,11,6,1,17,20,12,16,18,9,23,13,19,24,3,8,7,21,10,5,4,2)
+```
+
+### Function for Conjoint Analysis
+
+```{r}
+partworths <- function(pref_df){
+  
+  # profiles and cost
+  my_profile <- c(1, 0, 1, 0, 0)
+  sony_profile <- c(1, 1, 0, 0, 1)
+  sharp_profile <- c(1, 0, 1, 1, 0)
+  costs <- c(1000, 500, 1000, 250, 250)
+  market_size <- 100
+  total_cost <- sum(my_profile*costs)
+  
+  # linear model for calculating partworths
+  model <- lm(pref_df$Preference ~ pref_df$`Screen 75 inch` + pref_df$`Screen 85 inch` + pref_df$`Resolution 4K = 1` + pref_df$`Sony = 1` + pref_df$`Price (low = 0; hi =1)`)
+  
+  # partworth estimates
+  partworths_est <- c(model$coefficients)
+  print('Partworth Estimates:')
+  print(partworths_est)
+  
+  
+  # output dataframe
+  df_prices <- data.frame(matrix(ncol = 5, nrow = 0))
+  colnames(df_prices) <- c('Price','Market Share','Sales','Margin','Profit')
+  price <- seq(1500,2600, by = 100)
+  
+  for (p in price){
+    
+    # utility for sony and sharp
+    sony2 <- append(sony_profile, (2500 - total_cost)/(2500-total_cost))
+    sharp2 <- append(sharp_profile, (2000 - total_cost)/(2500-total_cost))
+    my_profile2 <- append(my_profile, (p-total_cost)/(2500-total_cost))
+    
+    utility_sony <- sum(sony2*partworths_est)
+    utility_sharp <- sum(sharp2*partworths_est)
+    utility_my_profile <- sum(my_profile2*partworths_est)
+    utility_my_profile
+    
+    # calculate total attractiveness
+    total_attractiveness = (exp(utility_my_profile) + exp(utility_sony) + exp(utility_sharp))
+    total_attractiveness
+    
+    # calculate market share, sales, margin, profit and add to dataframe
+    market_share <- exp(utility_my_profile)/total_attractiveness
+    sales <- round(market_share*market_size)
+    margin <- p - total_cost
+    profit <- sales*margin
+    df_prices <- rbind(df_prices,c(p,market_share,sales,margin,profit))
+  }
+  colnames(df_prices) <- c('Price','Market Share','Sales','Margin','Profit')
+  plot(df_prices$Price, df_prices$`Market Share`, type = "b", ylab = 'Market Share', xlab = 'Price')
+  plot(df_prices$Price, df_prices$Profit, type = "b", ylab= 'Profit', xlab = 'Price')
+  
+  # Assuming 'model' is your linear regression model object
+  coeff <- coefficients(model)
+  
+  # Calculate the range of attribute
+  screen_size <- coeff["pref_df$`Screen 85 inch`"] - coeff["pref_df$`Screen 75 inch`"]
+  screen_resolution <- coeff["pref_df$`Resolution 4K = 1`"] - 0
+  brand_name <- coeff["pref_df$`Sony = 1`"] - 0
+  price <- 0 - coeff["pref_df$`Price (low = 0; hi =1)`"]
+  
+  # Calculate the importance in percentage(%)
+  total_importance <- screen_size + screen_resolution + brand_name + price
+  screen_size_importance <- round((screen_size / total_importance) * 100, 2)
+  screen_resolution_importance <- round((screen_resolution / total_importance) * 100, 2)
+  brand_name_importance <- round((brand_name / total_importance) * 100, 2)
+  price_importance <- round((price / total_importance) * 100, 2)
+  
+  # Create a data frame for Attribute Importance of each attribute
+  importance <- data.frame(
+    Attribute = c("Screen Size", "Screen Resolution", "Brand Name", "Price"),
+    Importance_Percentage = c(screen_size_importance, screen_resolution_importance, brand_name_importance, price_importance)
+  )
+  
+  # Print or view the created data frame
+  print(importance)
+  cat("\n")
+  
+  # Given data
+  sony_price <- 2500
+  sharp_price <- 2000
+  
+  # Calculate the exchange rate
+  price_difference <- (sony_price - sharp_price)
+  exchange_rate <- price_difference / sony_price
+  
+  # Calculate willingness to pay for each non-price attribute level
+  screen_size_wtp <- exchange_rate * screen_size
+  screen_resolution_wtp <- exchange_rate * screen_resolution
+  brand_name_wtp <- exchange_rate * brand_name
+  
+  # Print willingness to pay
+  print("Willingness to pay for screen size:")
+  print(screen_size_wtp)
+  print("Willingness to pay for screen resolution:")
+  print(screen_resolution_wtp)
+  print("Willingness to pay for brand name:")
+  print(brand_name_wtp)
+  cat("\n")
+  return(df_prices)
+}
+
+
+```
+
+```{r}
+result <- partworths(ranked)
+result
+```
